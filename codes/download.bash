@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Create directories if they don't exist
-mkdir -p ./training_data ./test_data
+mkdir -p ../data/training_data ../data/test_data
 
 # Function to download, unzip, and clean up
 download_and_extract() {
@@ -26,7 +26,7 @@ download_and_extract() {
 # Download, unzip, and clean up training data
 echo "Downloading and extracting training data..."
 for i in $(seq 1 17); do
-    url="https://xeek-public-287031953319-eb80.s3.amazonaws.com/image-impeccable/image-impeccable-train-data-part${i}.zip"
+	url="https://xeek-public-287031953319-eb80.s3.amazonaws.com/image-impeccable/image-impeccable-train-data-part${i}.zip"
     download_and_extract "$url" "./training_data/"
 done
 
