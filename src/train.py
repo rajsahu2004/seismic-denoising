@@ -1,28 +1,22 @@
 import os
 import glob
 import numpy as np
-import tensorflow as tf
-from sklearn.model_selection import train_test_split
-from tensorflow.keras.models import Model  # type: ignore
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, UpSampling2D # type: ignore
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, Dataset, random_split
 import matplotlib.pyplot as plt
-print(tf.__version__)
-# Check if GPUs are available
-physical_devices = tf.config.list_physical_devices('GPU')
-print("Num GPUs Available: ", len(physical_devices))
 
 # ---------------- Helper Functions ---------------- #
 def load_and_preprocess_data(img_path, noise_path):
     img = np.load(img_path, allow_pickle=True)
     noise = np.load(noise_path, allow_pickle=True)
     
-    # Process shapes and rescale
     img = check_shape(img)
     noise = check_shape(noise)
     img = rescale_volume(img, 1, 99)
     noise = rescale_volume(noise, 1, 99)
     
-    # Cast to float32
     img = img.astype(np.float32)
     noise = noise.astype(np.float32)
     
@@ -41,74 +35,107 @@ def rescale_volume(seismic, low=0, high=100):
     return seismic
 
 # ---------------- Dataset Creation ---------------- #
-def create_dataset(pairs, batch_size=8, shuffle_buffer_size=100):
+class SeismicDataset(Dataset):
+    def __init__(self, img_paths, noise_paths):
+        self.img_paths = img_paths
+        self.noise_paths = noise_paths
+
+    def __len__(self):
+        return len(self.img_paths)
+
+    def __getitem__(self, idx):
+        img, noise = load_and_preprocess_data(self.img_paths[idx], self.noise_paths[idx])
+        img = torch.tensor(img, dtype=torch.float32).unsqueeze(0)  # Add channel dimension
+        noise = torch.tensor(noise, dtype=torch.float32).unsqueeze(0)  # Add channel dimension
+        return img, noise
+
+def create_dataset(pairs, batch_size=8):
     img_paths, noise_paths = zip(*pairs)
-    
-    dataset = tf.data.Dataset.from_tensor_slices((list(img_paths), list(noise_paths)))
-    
-    def _load_data(img_path, noise_path):
-        img_slices, noise_slices = tf.numpy_function(load_and_preprocess_data, [img_path, noise_path], [tf.float32, tf.float32])
-        
-        img_slices.set_shape([None, 300, 300])
-        noise_slices.set_shape([None, 300, 300])
-        
-        # Return slices
-        img_ds = tf.data.Dataset.from_tensor_slices(img_slices)
-        noise_ds = tf.data.Dataset.from_tensor_slices(noise_slices)
-        
-        return tf.data.Dataset.zip((img_ds, noise_ds))
-
-    # Apply _load_data and split into individual slices
-    dataset = dataset.flat_map(_load_data)
-    dataset = dataset.shuffle(shuffle_buffer_size).batch(batch_size)
-    dataset = dataset.prefetch(tf.data.AUTOTUNE)
-    
-    return dataset
-
+    dataset = SeismicDataset(img_paths, noise_paths)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    return dataloader
 # ---------------- Model Definition ---------------- #
-def build_autoencoder(input_shape=(300, 300, 1)):
-    input_img = Input(shape=input_shape)
+class Autoencoder(nn.Module):
+    def __init__(self):
+        super(Autoencoder, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Conv2d(1, 64, kernel_size=3, padding=1),
+            nn.ReLU(True),
+            nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.ReLU(True),
+            nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),
+            nn.ReLU(True)
+        )
+        
+        self.decoder = nn.Sequential(
+            nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2),
+            nn.ReLU(True),
+            nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2),
+            nn.ReLU(True),
+            nn.Conv2d(64, 1, kernel_size=3, padding=1),
+            nn.Sigmoid()
+        )
 
-    x = Conv2D(64, (3, 3), activation='relu', padding='same')(input_img)
-    x = MaxPooling2D((2, 2), padding='same')(x)
-    x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
-    x = MaxPooling2D((2, 2), padding='same')(x)
-    
-    x = Conv2D(256, (3, 3), activation='relu', padding='same')(x)
-    
-    x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
-    x = UpSampling2D((2, 2))(x)
-    x = Conv2D(64, (3, 3), activation='relu', padding='same')(x)
-    x = UpSampling2D((2, 2))(x)
-    decoded = Conv2D(1, (3, 3), activation='sigmoid', padding='same')(x)
-
-    autoencoder = Model(input_img, decoded)
-    autoencoder.compile(optimizer='adam', loss='mean_squared_error')
-    return autoencoder
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
 
 # ---------------- Training Function ---------------- #
-def train_model(train_data, val_data, epochs=50):
-    model = build_autoencoder()
-    model.summary()
+def train_model(train_loader, val_loader, epochs=50):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = Autoencoder().to(device)
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
     
-    history = model.fit(
-        train_data,
-        validation_data=val_data,
-        epochs=epochs
-    )
+    train_losses = []
+    val_losses = []
 
+    for epoch in range(epochs):
+        model.train()
+        running_loss = 0.0
+        for img, noise in train_loader:
+            img, noise = img.to(device), noise.to(device)
+            
+            optimizer.zero_grad()
+            outputs = model(noise)
+            loss = criterion(outputs, img)
+            loss.backward()
+            optimizer.step()
+            
+            running_loss += loss.item() * img.size(0)
+        
+        epoch_loss = running_loss / len(train_loader.dataset)
+        train_losses.append(epoch_loss)
+        
+        # Validation
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for img, noise in val_loader:
+                img, noise = img.to(device), noise.to(device)
+                outputs = model(noise)
+                loss = criterion(outputs, img)
+                val_loss += loss.item() * img.size(0)
+        
+        epoch_val_loss = val_loss / len(val_loader.dataset)
+        val_losses.append(epoch_val_loss)
+        
+        print(f'Epoch {epoch+1}/{epochs}, Train Loss: {epoch_loss:.4f}, Val Loss: {epoch_val_loss:.4f}')
+    
     # Save the model
-    model.save('seismic_denoising_model.h5')
+    torch.save(model.state_dict(), 'seismic_denoising_model.pth')
 
     # Plot loss curves
-    plt.plot(history.history['loss'], label='Training Loss')
-    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.plot(train_losses, label='Training Loss')
+    plt.plot(val_losses, label='Validation Loss')
     plt.legend()
     plt.savefig('training_loss_curve.png')
 
-# ---------------- Main Script ---------------- #
+
 if __name__ == "__main__":
-    # Define file pairs (img_path, noise_path)
     file_pairs = [
         ('data/training_data/77695365/seismicCubes_RFC_fullstack_2023.77695365.npy', 'data/training_data/77695365/seismic_w_noise_vol_77695365.npy'),
         ('data/training_data/76135802/seismicCubes_RFC_fullstack_2023.76135802.npy', 'data/training_data/76135802/seismic_w_noise_vol_76135802.npy'),
@@ -116,15 +143,16 @@ if __name__ == "__main__":
     ]
 
     # Split data into training and validation sets
-    train_pairs, val_pairs = train_test_split(file_pairs, test_size=0.2)
-
-    # Create datasets
-    train_dataset = create_dataset(train_pairs, batch_size=8)
-    val_dataset = create_dataset(val_pairs, batch_size=8)
+    train_pairs, val_pairs = random_split(file_pairs, [int(0.8 * len(file_pairs)), int(0.2 * len(file_pairs))])
     
-    for img, noise in train_dataset.take(1):
+    # Create datasets
+    train_loader = create_dataset(train_pairs, batch_size=8)
+    val_loader = create_dataset(val_pairs, batch_size=8)
+    
+    for img, noise in train_loader:
         print("Image shape:", img.shape)
         print("Noise shape:", noise.shape)
+        break
 
     # Train the model
-    train_model(train_dataset, val_dataset, epochs=50)
+    train_model(train_loader, val_loader, epochs=50)
