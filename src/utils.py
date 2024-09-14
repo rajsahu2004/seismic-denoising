@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-import tensorflow as tf
+
 
 def check_shape(npy_file):
     if npy_file.shape != (1259,300,300):
@@ -40,24 +40,3 @@ def load_and_preprocess_data(folder_path, low=2, high=98):
             img = check_shape(img)
             img = rescale_volume(img, low, high)
     return img, noise
-
-class SeismicDataset(tf.data.Dataset):
-    def __init__(self, img_paths, noise_paths, batch_size=8, shuffle_buffer_size=100):
-        self.img_paths = img_paths
-        self.noise_paths = noise_paths
-        self.batch_size = batch_size
-        self.shuffle_buffer_size = shuffle_buffer_size
-
-        # Create dataset from paths
-        dataset = tf.data.Dataset.from_tensor_slices((self.img_paths, self.noise_paths))
-        dataset = dataset.map(self._parse_function, num_parallel_calls=tf.data.AUTOTUNE)
-        dataset = dataset.shuffle(self.shuffle_buffer_size).batch(self.batch_size)
-        dataset = dataset.prefetch(tf.data.AUTOTUNE)
-        self.dataset = dataset
-
-    def _parse_function(self, img_path, noise_path):
-        img, noise = tf.numpy_function(load_and_preprocess_data, [img_path, noise_path], [tf.float32, tf.float32])
-        return img, noise
-
-    def get_dataset(self):
-        return self.dataset
