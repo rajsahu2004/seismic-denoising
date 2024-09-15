@@ -12,8 +12,9 @@ batch_size = 1  # Adjust according to your GPU memory
 num_epochs = 10
 learning_rate = 1e-3
 data_dir = 'data'
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 torch.cuda.empty_cache()
+# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = 'cpu'
 
 # Initialize the dataset and dataloader
 train_dataset = SeismicDataset(data_dir=data_dir, train=True)
@@ -45,7 +46,7 @@ for epoch in tqdm(range(num_epochs), desc='Epochs', total=num_epochs):
 
         optimizer.zero_grad()
 
-        with autocast():
+        with autocast(device_type='cuda'):
             outputs = model(x)
             loss = criterion(outputs, x)
 
