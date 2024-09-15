@@ -31,7 +31,7 @@ class SeismicDataset(Dataset):
         seismic = np.clip(seismic, minval, maxval)
         seismic = ((seismic - minval) / (maxval - minval)) * 255
         return seismic
-
+    
     def __getitem__(self, index):
         assert index < len(self.img), f'Index {index} out of bounds'
         self.x = np.load(self.img[index], allow_pickle=True, mmap_mode='r+')
