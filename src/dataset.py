@@ -86,7 +86,7 @@ class SeismicDataset(Dataset):
             img = img[:, :, y_slice]
         elif x_slice != 'all' and y_slice == 'all':
             img = img[:, x_slice, :]
-        fig, ax = plt.subplots(1, 1, figsize=(5, 9))
+        fig, ax = plt.subplots(1, 1, figsize=(3, 9))
         ax.imshow(img, cmap='seismic')
         ax.set_title('Seismic Image')
         ax.set_xlabel('X')
