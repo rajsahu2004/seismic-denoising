@@ -1,10 +1,9 @@
 import os
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import numpy as np
 from glob import glob
 import matplotlib.pyplot as plt
-from tqdm.auto import tqdm
 from torchvision import transforms
 
 class SeismicDataset(Dataset):
