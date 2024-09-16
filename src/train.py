@@ -3,7 +3,7 @@ import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from dataset import SeismicDataset
-from model import Autoencoder3D
+from model import SimpleCNN3D
 from tqdm.auto import tqdm
 from torch.amp import GradScaler, autocast
 
@@ -13,15 +13,13 @@ num_epochs = 10
 learning_rate = 1e-3
 data_dir = 'data'
 torch.cuda.empty_cache()
-# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-device = 'cpu'
-
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')
 # Initialize the dataset and dataloader
 train_dataset = SeismicDataset(data_dir=data_dir, train=True)
-train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8)  # Adjust num_workers as needed
-
+train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=64)  # Adjust num_workers as needed
 # Initialize the model, loss function, and optimizer
-model = Autoencoder3D().to(device)
+model = SimpleCNN3D().to(device)
 criterion = torch.nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -41,6 +39,7 @@ for epoch in tqdm(range(num_epochs), desc='Epochs', total=num_epochs):
     num_batches = len(train_dataloader)
     
     for i, (x, y) in enumerate(train_dataloader):
+        print(x.shape, y.shape)
         x = x.to(device)
         y = y.to(device)
 

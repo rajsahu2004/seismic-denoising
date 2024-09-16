@@ -25,30 +25,42 @@ class SeismicDataset(Dataset):
             npy_file = npy_file.T
         return npy_file
 
-
-
     def __getitem__(self, index):
         assert index < len(self.img_paths), f'Index {index} out of bounds'
+        
+        # Load the noisy seismic data
         self.x = np.load(self.img_paths[index], allow_pickle=True, mmap_mode='r+')
         self.x = self.check_shape(self.x)
-
+        
+        # Remove the top 59 slices to make it (1200, 300, 300)
+        self.x = self.x[59:, :, :]
+        
+        # Load the clean seismic data (only if in training mode)
         if self.train:
             self.y = np.load(self.label_paths[index], allow_pickle=True, mmap_mode='r+')
             self.y = self.check_shape(self.y)
+            
+            # Remove the top 59 slices for the clean data as well
+            self.y = self.y[59:, :, :]
+        
+        # Rescale the seismic data
         self.x = Rescale()(self.x)
         if self.train:
             self.y = Rescale()(self.y)
+        
+        # Apply any additional transformations (if provided)
         if self.transform:
             self.x = self.transform(self.x)
             if self.train:
                 self.y = self.transform(self.y)
 
+        # Return the image and label if in training mode, otherwise just the image
         return (self.x, self.y) if self.train else self.x
     
     def plot_data_train(self, img, label, title='Seismic Data', x_slice='all', y_slice='all'):
-        if img.shape != (1259, 300, 300):
+        if img.shape != (1260, 300, 300):
             img = torch.squeeze(img)
-        if label.shape != (1259, 300, 300):
+        if label.shape != (1260, 300, 300):
             label = torch.squeeze(label)
 
         if x_slice == 'all' and y_slice == 'all':
