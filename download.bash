@@ -27,7 +27,7 @@ download_and_extract() {
 
 # Download, unzip, and clean up training data
 echo "Downloading and extracting training data..."
-for i in $(seq 1 3); do # 1 to 17
+for i in $(seq 1 1); do # 1 to 17
 	url="https://xeek-public-287031953319-eb80.s3.amazonaws.com/image-impeccable/image-impeccable-train-data-part${i}.zip"
     download_and_extract "$url" $trainDir
 done
