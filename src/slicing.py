@@ -10,13 +10,19 @@ def check_shape(npy_file):
 
 def get_slices(filepath):
     file = np.load(filepath, allow_pickle=True)
-    for i in tqdm(range(file.shape[0]),total=file.shape[0],desc=f'Slicing {filepath.split("/")[-1]}'):
-        slice_name = os.path.join(filepath.split('.npy')[0])
-        slice_name = slice_name + '_slice_' + str(i+1) + '.npy'
-        np.save(slice_name, file[i])
+    file = check_shape(file)
+    num_slices = file.shape[0]
+    folder = filepath.split('/')
+    folder = '/'.join(folder[:-1])
+    filename = filepath.split('/')[-1].split('.npy')[0]
+    for i in range(num_slices):
+        slice = file[i]
+        save_path = f'{folder}/{filename}_{i}.npy'
+        np.save(save_path, slice)
     os.remove(filepath)
+    
 
 
 files = glob('data/training_data/*/*.npy')
-for file in files:
+for file in tqdm(files):
     get_slices(file)
