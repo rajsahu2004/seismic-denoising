@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from torchvision import transforms
 
 class SeismicDataset(Dataset):
-    def __init__(self, data_dir='data', train=True, transform=None, time=False):
+    def __init__(self, data_dir='data', train=True, transform=None):
         self.train = train
         self.dir = os.path.join(data_dir, 'test_data' if not train else 'training_data')
         self.img_paths = sorted(glob(f'{self.dir}/*/*noise*.npy'))
@@ -17,7 +17,8 @@ class SeismicDataset(Dataset):
         self.transform = transform
 
     def __len__(self):
-        return len(self.img_paths)
+        # Return the number of slices across all volumes
+        return len(self.img_paths) * 1259  # Assuming 1259 slices per volume
 
     def check_shape(self, npy_file):
         if npy_file.shape != (1259, 300, 300):
@@ -25,36 +26,29 @@ class SeismicDataset(Dataset):
         return npy_file
 
     def __getitem__(self, index):
-        assert index < len(self.img_paths), f'Index {index} out of bounds'
-        
+        # Determine the file and the slice index
+        file_index = index // 1259  # Get which file the slice belongs to
+        slice_index = index % 1259  # Get the slice number within the file
+
         # Load the noisy seismic data
-        self.x = np.load(self.img_paths[index], allow_pickle=True, mmap_mode='r+')
-        self.x = self.check_shape(self.x)
-        
-        # Remove the top 59 slices to make it (1200, 300, 300)
-        self.x = self.x[59:, :, :]
-        
+        x_volume = np.load(self.img_paths[file_index], allow_pickle=True, mmap_mode='r+')
+        x_volume = self.check_shape(x_volume)
+        x_slice = x_volume[slice_index]  # Extract the slice
+
         # Load the clean seismic data (only if in training mode)
         if self.train:
-            self.y = np.load(self.label_paths[index], allow_pickle=True, mmap_mode='r+')
-            self.y = self.check_shape(self.y)
-            
-            # Remove the top 59 slices for the clean data as well
-            self.y = self.y[59:, :, :]
+            y_volume = np.load(self.label_paths[file_index], allow_pickle=True, mmap_mode='r+')
+            y_volume = self.check_shape(y_volume)
+            y_slice = y_volume[slice_index]  # Extract the corresponding slice
         
-        # Rescale the seismic data
-        self.x = Rescale()(self.x)
-        if self.train:
-            self.y = Rescale()(self.y)
-        
-        # Apply any additional transformations (if provided)
-        if self.transform:
-            self.x = self.transform(self.x)
-            if self.train:
-                self.y = self.transform(self.y)
+        # # Apply any additional transformations (if provided)
+        # if self.transform:
+        #     x_slice = self.transform(x_slice)
+        #     if self.train:
+        #         y_slice = self.transform(y_slice)
 
-        # Return the image and label if in training mode, otherwise just the image
-        return (self.x, self.y) if self.train else self.x
+        # Return the image slice and label slice if in training mode, otherwise just the image slice
+        return (x_slice, y_slice) if self.train else x_slice
     
     def plot_data_train(self, img, label, title='Seismic Data', x_slice='all', y_slice='all'):
         if img.shape != (1260, 300, 300):
