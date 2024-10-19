@@ -1,21 +1,30 @@
 import torch
 import torch.nn as nn
 
-# Define a simple 2D CNN model
-class Simple2DCNN(nn.Module):
-    def __init__(self):
-        super(Simple2DCNN, self).__init__()
-        self.conv1 = nn.Conv2d(1, 8, kernel_size=3, padding=1)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(8, 16, kernel_size=3, padding=1)
-        # Adjust the size of the fully connected layer based on the output size of conv layers
-        self.fc1 = nn.Linear(16 * 75 * 75, 128)  # Assuming input size is (300x300), downsampled by pooling twice
-        self.fc2 = nn.Linear(128, 1)
+class BaseModel(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(BaseModel, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Conv2d(in_channels, 512, kernel_size=3, stride=1, padding=1),  # (512, H, W)
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # Downsample (512, H//2, W//2)
 
+            nn.Conv2d(512, 256, kernel_size=3, stride=1, padding=1),  # (256, H//2, W//2)
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # Downsample (256, H//4, W//4)
+        )
+        self.decoder = nn.Sequential(
+
+            nn.ConvTranspose2d(256, 512, kernel_size=2, stride=2),  # Upsample (512, H//2, W//2)
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
+
+            nn.ConvTranspose2d(512, out_channels, kernel_size=2, stride=2)  # Adjust output_padding
+        )
+    
     def forward(self, x):
-        x = self.pool(torch.relu(self.conv1(x)))
-        x = self.pool(torch.relu(self.conv2(x)))
-        x = x.view(-1, 16 * 75 * 75)  # Flatten for the fully connected layers
-        x = torch.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+        encoded = self.encoder(x)
+        decoded = self.decoder(encoded)
+        return decoded
